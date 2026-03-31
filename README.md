@@ -1,6 +1,6 @@
 # Data logger and plotter for pm1xx powermeter
 
-Python script to adquire data from pm1xx powermeters. Tested on windows with python3.13.
+Python script to adquire data from pm1xx powermeters. Tested on Windows with python3.13.
 
 Packages needed (may be missing someones): ` python3.13.exe -m pip install -U pyvisa pyvisa-py pyserial pyusb libusb-package matplotlib`
 
