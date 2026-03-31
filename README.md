@@ -6,6 +6,8 @@ Packages needed (may be missing someones): ` python3.13.exe -m pip install -U py
 
 Usage: `python3.13.exe .\pm1xx_logger.py --duration 1h --sample-rate-hz 10 --wavelength-nm 1470 --bandwidth high --name 3.0A_1470nm_1h_t3`
 
+There is also a plotting code that can use the output of the logger.
+
 - For plotting all csv in a folder:
 
 `python3.13.exe .\plot_laserdriver_csv.py --folder .\Power_Test_CSVs --band-start 4min --y-min 1.0 --y-max 1.12 --all-in-folder --all-folder-band-mode individual`
