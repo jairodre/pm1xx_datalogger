@@ -1,1 +1,3 @@
-# pm1xx_datalogger
+# Data logger for pm1xx powermeter
+
+Usage:
