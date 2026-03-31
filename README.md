@@ -6,7 +6,7 @@ Packages needed (may be missing someones): ` python3.13.exe -m pip install -U py
 
 Usage: `python3.13.exe .\pm1xx_logger.py --duration 1h --sample-rate-hz 10 --wavelength-nm 1470 --bandwidth high --name 3.0A_1470nm_1h_t3`
 
-For plotting all csv in a folder:
+- For plotting all csv in a folder:
 
 `python3.13.exe .\plot_laserdriver_csv.py --folder .\Power_Test_CSVs --band-start 4min --y-min 1.0 --y-max 1.12 --all-in-folder --all-folder-band-mode individual`
 
@@ -14,7 +14,8 @@ Result with options above:
 
 <img width="1375" height="875" alt="Power_Test_CSVs_overlay_plot" src="https://github.com/user-attachments/assets/be3b1d99-0b23-4b9a-813e-6f7047965ef5" />
 
-Individual files plotting:
+
+- Individual files plotting:
 
 `python3.13.exe .\plot_laserdriver_csv.py --file .\Power_Test_CSVs\3.0A_1470nm_1h_t2_20260313_162207.csv --band-start 4min --y-min 1.0 --y-max 1.12 --all-folder-band-mode individual`
 
