@@ -16,7 +16,7 @@ Result with options above:
 
 <img width="1375" height="875" alt="Power_Test_CSVs_overlay_plot" src="https://github.com/user-attachments/assets/be3b1d99-0b23-4b9a-813e-6f7047965ef5" />
 
-
+<br>
 
 - **Individual files plotting**:
 
