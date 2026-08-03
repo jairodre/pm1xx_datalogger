@@ -26,7 +26,7 @@ Result with options above:
 
 ## GUI Logger Alternative: Multi-Sensor Acquisition
 
-`pm1xx_temperature_gui.py` is a graphical alternative to the command-line logger. It does not replace `pm1xx_logger.py`.
+`pm1xx_gui.py` is a graphical alternative to the command-line logger. It does not replace `pm1xx_logger.py`.
 
 It supports Thorlabs PM100/PM400-compatible VISA meters and provides:
 
@@ -50,7 +50,7 @@ Tkinter is normally included with the standard Windows Python installer. A worki
 ### Run
 
 ```powershell
-python pm1xx_temperature_gui.py
+python pm1xx_gui.py
 ```
 
 1. Click **Refresh Resources**.
