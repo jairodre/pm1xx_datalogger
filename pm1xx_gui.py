@@ -8,7 +8,7 @@ Temperature columns are included only when requested and supported by each
 connected sensor.
 
 Run it with the same Python environment that has pyvisa, matplotlib, and Tk:
-    python pm1xx_temperature_gui.py
+    python pm1xx_gui.py
 """
 
 from __future__ import annotations
@@ -18,6 +18,7 @@ import queue
 import re
 import threading
 import time
+from collections import deque
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -32,11 +33,45 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
 
 
+LONG_RUN_THRESHOLD_S = 3600.0
+LONG_RUN_LIVE_WINDOW_S = 30.0 * 60.0
+LONG_RUN_RENDER_PERIOD_S = 1.0
+
+
 @dataclass(frozen=True)
 class MeterInfo:
     resource: str
     model: str
     serial: str
+
+
+@dataclass
+class RunningPowerStats:
+    """Numerically stable full-run statistics without retaining all samples."""
+
+    count: int = 0
+    mean: float = 0.0
+    m2: float = 0.0
+    minimum: float = float("inf")
+    maximum: float = float("-inf")
+
+    def add(self, value: float) -> None:
+        if not math.isfinite(value):
+            return
+        self.count += 1
+        delta = value - self.mean
+        self.mean += delta / self.count
+        self.m2 += delta * (value - self.mean)
+        self.minimum = min(self.minimum, value)
+        self.maximum = max(self.maximum, value)
+
+    @property
+    def std(self) -> float:
+        return math.sqrt(self.m2 / self.count) if self.count else float("nan")
+
+    @property
+    def delta(self) -> float:
+        return self.maximum - self.minimum if self.count else float("nan")
 
 
 def infer_serial_from_resource(resource: str) -> str:
@@ -302,9 +337,11 @@ class PM1xxTemperatureGUI(tk.Tk):
         self.running = False
         self.discovered_meters: list[MeterInfo] = []
         self.meter_selected_vars: dict[str, tk.BooleanVar] = {}
-        self.live_data: dict[str, dict[str, list[float]]] = {}
+        self.live_data: dict[str, dict[str, Any]] = {}
         self.live_dirty = False
         self.live_time_unit = "s"
+        self.long_run_live_mode = False
+        self.last_live_render_time = 0.0
 
         self.duration_value = tk.StringVar(value="3")
         self.duration_unit = tk.StringVar(value="min")
@@ -567,8 +604,11 @@ class PM1xxTemperatureGUI(tk.Tk):
             "file_name": self.file_name.get(),
             "save_folder": Path(self.save_folder.get().strip() or "Power_Test_CSVs").expanduser(),
             "temperature_requested": self.include_temperature.get(),
+            "long_run_live_mode": duration_seconds > LONG_RUN_THRESHOLD_S,
         }
         self.live_time_unit = self.duration_unit.get()
+        self.long_run_live_mode = settings["long_run_live_mode"]
+        self.last_live_render_time = 0.0
         self.live_data.clear()
         self.live_readout.set("Latest measurement: connecting to selected meter...")
         self._draw_empty_live_plot()
@@ -665,6 +705,11 @@ class PM1xxTemperatureGUI(tk.Tk):
             handle.write("\t".join(column_headers) + "\n")
 
             self.events.put(("log", f"Logging {len(opened)} meter(s) for {settings['duration_seconds']:.2f} s at {settings['sample_rate']:.3f} Hz..."))
+            if settings["long_run_live_mode"]:
+                self.events.put((
+                    "log",
+                    "Long-run live mode: plotting the latest 30 minutes; live statistics cover the full run and refresh once per second.",
+                ))
             sample_period = 1.0 / settings["sample_rate"]
             t0 = time.perf_counter()
             while not self.stop_event.is_set():
@@ -726,7 +771,10 @@ class PM1xxTemperatureGUI(tk.Tk):
 
     def _draw_empty_live_plot(self) -> None:
         self.live_axes.clear()
-        self.live_axes.set_title("Live Power")
+        title = "Live Power"
+        if self.long_run_live_mode:
+            title += " (Latest 30 min; Full-Run Statistics)"
+        self.live_axes.set_title(title)
         self.live_axes.set_xlabel(f"Time ({self.live_time_unit})")
         self.live_axes.set_ylabel("Power (W)")
         self.live_axes.grid(True, alpha=0.25)
@@ -739,10 +787,27 @@ class PM1xxTemperatureGUI(tk.Tk):
         seconds_to_display = {"s": 1.0, "min": 1.0 / 60.0, "h": 1.0 / 3600.0}[self.live_time_unit]
         for serial, series in sorted(self.live_data.items()):
             if series["time"]:
-                finite_powers = [value for value in series["power"] if math.isfinite(value)]
-                if finite_powers:
-                    low, high, std, delta = band_stats(finite_powers)
-                    mean = sum(finite_powers) / len(finite_powers)
+                if self.long_run_live_mode:
+                    stats: RunningPowerStats = series["stats"]
+                    if stats.count:
+                        low, high, std, delta, mean = (
+                            stats.minimum,
+                            stats.maximum,
+                            stats.std,
+                            stats.delta,
+                            stats.mean,
+                        )
+                    else:
+                        low = high = std = delta = mean = float("nan")
+                else:
+                    finite_powers = [value for value in series["power"] if math.isfinite(value)]
+                    if finite_powers:
+                        low, high, std, delta = band_stats(finite_powers)
+                        mean = sum(finite_powers) / len(finite_powers)
+                    else:
+                        low = high = std = delta = mean = float("nan")
+
+                if math.isfinite(mean):
                     label = (
                         f"{serial}\n"
                         f"Mean: {mean:.3f} W\n"
@@ -753,7 +818,7 @@ class PM1xxTemperatureGUI(tk.Tk):
                 else:
                     label = f"{serial}\nNo finite power values"
                 displayed_time = [value * seconds_to_display for value in series["time"]]
-                self.live_axes.plot(displayed_time, series["power"], linewidth=1.2, label=label)
+                self.live_axes.plot(displayed_time, list(series["power"]), linewidth=1.2, label=label)
                 any_data = True
         if any_data:
             self.live_axes.legend(loc="upper left", bbox_to_anchor=(1.02, 1.0), borderaxespad=0.0, fontsize=8)
@@ -773,9 +838,21 @@ class PM1xxTemperatureGUI(tk.Tk):
                     self.live_readout.set(f"Latest measurement: {payload}")
                 elif kind == "live":
                     serial, elapsed, power = payload
-                    series = self.live_data.setdefault("%s" % serial, {"time": [], "power": []})
+                    if self.long_run_live_mode:
+                        series = self.live_data.setdefault(
+                            "%s" % serial,
+                            {"time": deque(), "power": deque(), "stats": RunningPowerStats()},
+                        )
+                    else:
+                        series = self.live_data.setdefault("%s" % serial, {"time": [], "power": []})
                     series["time"].append(elapsed)
                     series["power"].append(power)
+                    if self.long_run_live_mode:
+                        series["stats"].add(power)
+                        cutoff = elapsed - LONG_RUN_LIVE_WINDOW_S
+                        while series["time"] and series["time"][0] < cutoff:
+                            series["time"].popleft()
+                            series["power"].popleft()
                     self.live_dirty = True
                 elif kind == "error":
                     self._append_log(str(payload))
@@ -791,8 +868,16 @@ class PM1xxTemperatureGUI(tk.Tk):
                         self.status.set("Acquisition complete.")
         except queue.Empty:
             pass
-        if self.live_dirty:
+        should_render = (
+            self.live_dirty
+            and (
+                not self.long_run_live_mode
+                or time.monotonic() - self.last_live_render_time >= LONG_RUN_RENDER_PERIOD_S
+            )
+        )
+        if should_render:
             self._render_live_plot()
+            self.last_live_render_time = time.monotonic()
         self.after(80, self._process_events)
 
     def _update_plot_file_state(self) -> None:
